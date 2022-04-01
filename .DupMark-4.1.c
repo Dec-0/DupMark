@@ -16,7 +16,7 @@ unsigned char InPath[1000],OutPath[1000],UmiName[100],SamPath[1000],OutSamPath[1
 unsigned char SamtoolsBin[1000],Fq2SamScript[1000];
 unsigned char BamHead[1000000],BuffContent[1000000],OutBuff[1000000],DcsBuff[1000000],FqBuff[2][1000000];
 unsigned int *DupFlag,*ReadLane,*ReadTile,*ReadX,*ReadY,*Query,*Read,*ReadTotalBQ,*Map1,*Map2,*Map3,**UmiSeq,**Index;
-unsigned int BamHeadLen,BamReadNum,MaxArraySize,DebugFlag,UmiFlag,FakeFlag,DStrandFlag,IDFormatFlag,MinReads,ReadExchangeFlag,FilterFlag,CombineFlag,ReadLen,DupFlagId,OutBuffId,DcsBuffId;
+unsigned int BamHeadLen,BamReadNum,MaxArraySize,DebugFlag,UmiFlag,FakeFlag,DStrandFlag,GroupInfoFlag,IDFormatFlag,MinReads,ReadExchangeFlag,FilterFlag,CombineFlag,ReadLen,DupFlagId,OutBuffId,DcsBuffId;
 unsigned int BuffSize,UmiNum,HUmiNum,HUmiSize,UmiSize,LineStart,LineEnd;
 unsigned int MaxBuffSize = 1000000;
 unsigned int MaxDupDistr = 800000;
@@ -59,10 +59,72 @@ int TimeLog(unsigned char *String)
 	return 1;
 }
 
+// 用于将字符型的数字转换为纯数字;
+unsigned int Char2Num(unsigned char *String)
+{
+	unsigned int i,Multi,Total;
+	
+	Multi = 10;
+	Total = 0;
+	i = 0;
+	while(String[i])
+	{
+		Total = Total * Multi + String[i] - 48;
+		i ++;
+	}
+	
+	return Total;
+}
+
+// 用于将纯数字转换为字符型的数字;
+int Num2Char(unsigned int Num, unsigned char *Char)
+{
+	unsigned int i,BitNum,tmpId;
+	
+	BitNum = 10;
+	for(i = 1;i < 20;i ++)
+	{
+		if(Num < BitNum)
+		{
+			break;
+		}
+		BitNum = BitNum * 10;
+	}
+	BitNum = BitNum / 10;
+	
+	tmpId = 0;
+	while(BitNum)
+	{
+		Char[tmpId] = (unsigned int)(Num / BitNum) % 10 + 48;
+		BitNum = (unsigned int)(BitNum / 10);
+		tmpId ++;
+	}
+	Char[tmpId] = '\0';
+	
+	return 1;
+}
+
 // 用于后者字符串内容 赋值到 前者中，并返回字符串长度;
 unsigned int StringCopy(unsigned char *StringTo, unsigned char *StringFrom)
 {
 	unsigned int i = 0;
+	
+	while(StringFrom[i])
+	{
+		StringTo[i] = StringFrom[i];
+		i ++;
+	}
+	StringTo[i] = '\0';
+	
+	return i;
+}
+
+unsigned int StringCopyWithNum(unsigned char *StringTo, unsigned int Num)
+{
+	unsigned char StringFrom[2000];
+	unsigned int i = 0;
+	
+	Num2Char(Num,StringFrom);
 	
 	while(StringFrom[i])
 	{
@@ -79,6 +141,29 @@ unsigned int StringAdd(unsigned char *StringMain, unsigned char *String)
 {
 	unsigned int i = 0;
 	unsigned int j = 0;
+	
+	while(StringMain[i])
+	{
+		i ++;
+	}
+	while(String[j])
+	{
+		StringMain[i] = String[j];
+		i ++;
+		j ++;
+	}
+	StringMain[i] = '\0';
+	
+	return i;
+}
+
+unsigned int StringAddWithNum(unsigned char *StringMain, unsigned int Num)
+{
+	unsigned char String[2000];
+	unsigned int i = 0;
+	unsigned int j = 0;
+	
+	Num2Char(Num,String);
 	
 	while(StringMain[i])
 	{
@@ -152,23 +237,6 @@ unsigned int StringBaseName(unsigned char *BaseName, unsigned char *String)
 	return i;
 }
 
-// 用于将字符型的数字转换为纯数字;
-unsigned int Char2Num(unsigned char *String)
-{
-	unsigned int i,Multi,Total;
-	
-	Multi = 10;
-	Total = 0;
-	i = 0;
-	while(String[i])
-	{
-		Total = Total * Multi + String[i] - 48;
-		i ++;
-	}
-	
-	return Total;
-}
-
 // 命令行参数输入;
 int OptGet(int argc, char *argv[])
 {
@@ -183,11 +251,14 @@ int OptGet(int argc, char *argv[])
 	unsigned char Samtools[10] = "S";
 	unsigned char Fq2Sam[10] = "Fq2Sam";
 	unsigned char Help[5] = "help";
+	unsigned char Group[6] = "group";
 	unsigned char OptHash[20],BaseName[1000];
 	unsigned char Info[2000] = "\n\n\
- DupMark-4.0    For Duplicates Marking and Consensus Making.\n\
+ DupMark-4.1    For Duplicates Marking and Consensus Making.\n\
  用于bam去重及UMI条件下的reads合并（SSCS、DCS ConsensusMaking）\n\
- Last revised date: 2021.5.4\n\
+ 和v4.0相比，新增参数“-g”，用于输出reads'ID的详细分组信息\n\
+ 同时修改了一个bug，非Illumina的reads格式保存中本应存入tY的存入了tX（虽然对BGI格式没有影响，因为只有23位，没有超过24位）\n\
+ Last revised date: 2021.6.30\n\
  Contact:zhangdong_xie@foxmail.com\n\n\
  -i/-infile   ( Required ) Bam file prepare to be dup marked.\n\n\
  -o/-outfile  ( Optional ) Dup-marked bam file.\n\
@@ -199,6 +270,7 @@ int OptGet(int argc, char *argv[])
  -M/-Merge    ( Optional ) If there was need to merge base and quality in SSCS and DCS combination (only -M, default: no change).\n\
  -S           ( Optional ) Directory for samtools (default: samtools).\n\
  -Fq2Sam      ( Optional ) Directory for Fq2SamScript (default:CurrentFolder/Fq2Sam.pl).\n\
+ -g/group     ( Optional ) Flag for only statistics of reads' group info.\n\
  -h/-help     ( Optional ) Help info.\n\n\
  [ Careful ] In DCS mode, base will be converted to 'N' if not satisfy the requirement.\n\
  [ Careful ] Default duplciates groupping mode: the UMI of read1 and read2 will exchange for potential grouping.\n\n";
@@ -573,6 +645,33 @@ int OptGet(int argc, char *argv[])
 				
 				OptHash[10] = 1;
 			}
+			else if(argv[i][j] == Group[0])
+			{
+				// match with "help";
+				if(argv[i][j + 1])
+				{
+					if(argv[i][j + 5] == 0)
+					{
+						tmp = 1;
+						for(k = j + 1;k < j + 5;k ++)
+						{
+							if(argv[i][k] != Group[tmp])
+							{
+								printf("[ Error ] Wrong format for -group.%s",Info);
+								exit(1);
+							}
+							tmp ++;
+						}
+					}
+					else
+					{
+						printf("[ Error ] Wrong format for -g.%s",Info);
+						exit(1);
+					}
+				}
+				
+				OptHash[11] = 1;
+			}
 			else if(argv[i][j] == Help[0])
 			{
 				// match with "help";
@@ -754,6 +853,12 @@ int OptGet(int argc, char *argv[])
 		DStrandFlag = 1;
 	}
 	
+	// 假如只统计reads的分组信息；
+	if(OptHash[11])
+	{
+		GroupInfoFlag = 1;
+	}
+	
 	return 1;
 }
 
@@ -887,8 +992,12 @@ int UmiSizeConfirm(unsigned char *File)
 						tmpId += i;
 						while(BuffContent[tmpId] != '\t' && BuffContent[tmpId] != '\n')
 						{
-							tmp ++;
 							tmpId ++;
+							if(BuffContent[tmpId] == '-')
+							{
+								continue;
+							}
+							tmp ++;
 						}
 					}
 				}
@@ -1275,6 +1384,7 @@ int MemoryRequire1()
 	unsigned char i;
 	
 	// unsigned int，在64位机器上是4个byte，unsigned long是8个byte;
+	// 这里共13个int，1个long int，共 60N Bytes，假如是1G条reads的话就是60G;
 	if((ReadLane = (unsigned int *)malloc(MaxArraySize * sizeof(unsigned int))) == NULL)
 	{
 		printf("[ Error ] Malloc memory unsuccessfully ( ReadLane %d).\n",MaxArraySize);
@@ -1412,33 +1522,6 @@ int MemoryFree2()
 int MemoryFree3()
 {
 	free(DupFlag);
-	
-	return 1;
-}
-
-int Num2Char(unsigned int Num, unsigned char *Char)
-{
-	unsigned int i,BitNum,tmpId;
-	
-	BitNum = 10;
-	for(i = 1;i < 20;i ++)
-	{
-		if(Num < BitNum)
-		{
-			break;
-		}
-		BitNum = BitNum * 10;
-	}
-	BitNum = BitNum / 10;
-	
-	tmpId = 0;
-	while(BitNum)
-	{
-		Char[tmpId] = (unsigned int)(Num / BitNum) % 10 + 48;
-		BitNum = (unsigned int)(BitNum / 10);
-		tmpId ++;
-	}
-	Char[tmpId] = '\0';
 	
 	return 1;
 }
@@ -1679,11 +1762,15 @@ int ReadInfoCollect(unsigned char *FilePath)
 					TabNum ++;
 					tmpId = 0;
 					
-					// 除Illumina外其它格式的存储;
+					// 除Illumina外其它格式的存储（比如：E100021302L1C003R03404393399）;
 					if(TabNum == 1 && IDFormatFlag != 1)
 					{
 						// 非Illumina格式，直接取8*4=32位数字;
 						NumAccum = 0;
+						tLane[0] = '\0';
+						tTile[0] = '\0';
+						tX[0] = '\0';
+						tY[0] = '\0';
 						for(j = LineStart;j < i;j ++)
 						{
 							// 只存储纯数字;
@@ -1708,8 +1795,8 @@ int ReadInfoCollect(unsigned char *FilePath)
 								}
 								else if(NumAccum <= 32)
 								{
-									tX[NumAccum - 25] = BuffContent[j];
-									tX[NumAccum - 24] = '\0';
+									tY[NumAccum - 25] = BuffContent[j];
+									tY[NumAccum - 24] = '\0';
 								}
 							}
 						}
@@ -1751,9 +1838,14 @@ int ReadInfoCollect(unsigned char *FilePath)
 									DSNum = 0;
 									while(BuffContent[tmp] != '\t' && BuffContent[tmp] != '\n')
 									{
+										if(BuffContent[tmp] == '-')
+										{
+											tmp ++;
+											continue;
+										}
+										tmp ++;
 										*(UmiSeq[tmpId] + BamReadNum) |= Char2Bit(BuffContent[tmp]) << tmpNum;
 										tmpNum += 3;
-										tmp ++;
 										DSNum ++;
 										if(tmpNum > 27 || DSNum == HUmiNum)
 										{
@@ -1766,9 +1858,14 @@ int ReadInfoCollect(unsigned char *FilePath)
 								{
 									while(BuffContent[tmp] != '\t' && BuffContent[tmp] != '\n')
 									{
+										if(BuffContent[tmp] == '-')
+										{
+											tmp ++;
+											continue;
+										}
+										tmp ++;
 										*(UmiSeq[tmpId] + BamReadNum) |= Char2Bit(BuffContent[tmp]) << tmpNum;
 										tmpNum += 3;
-										tmp ++;
 										if(tmpNum > 27)
 										{
 											tmpNum = 0;
@@ -1788,7 +1885,7 @@ int ReadInfoCollect(unsigned char *FilePath)
 				}
 				else if(TabNum <= 10)
 				{
-					// Illumina格式的存储;
+					// Illumina格式的存储（比如：A00679:63:HGVWCDSXX:4:1403:24569:25911）;
 					if(IDFormatFlag == 1)
 					{
 						// 存储lane、tile、x、y信息;
@@ -2182,7 +2279,11 @@ int QueryNameChange()
 		From = To;
 	}
 	
-	MemoryFree1();
+	// 假如需要统计reads的分组信息，则不能清空;
+	if(! GroupInfoFlag)
+	{
+		MemoryFree1();
+	}
 	
 	if(DebugFlag)
 	{
@@ -2720,6 +2821,7 @@ int DupCount(unsigned int From, unsigned int To)
 	return 1;
 }
 
+// 用于标记所有的分组，每次只处理单侧
 int DupSort(unsigned int From, unsigned int To, unsigned int SortFlag)
 {
 	unsigned int i,j,tmp,tmpFlag,tmpId,tmpA,tmpB,tmpC,tmpFrom,tmpTo,tmpLen;
@@ -2903,6 +3005,7 @@ int DupSort(unsigned int From, unsigned int To, unsigned int SortFlag)
 			for(i = tmpFrom;i < tmpTo;i ++)
 			{
 				tmp = *(Index[Id2] + i) & 0x7fffffff;
+				// 假如同伴已经有分组ID了，则沿用该ID；
 				if(*(DupFlag + tmp))
 				{
 					tmpId = *(DupFlag + tmp);
@@ -2910,12 +3013,14 @@ int DupSort(unsigned int From, unsigned int To, unsigned int SortFlag)
 					break;
 				}
 			}
+			// 假如同伴没有被赋予任何ID，则顺序编号；
 			if(tmpFlag == 0)
 			{
 				DupFlagId ++;
 				tmpId = DupFlagId;
 			}
 			
+			// 对所有相关reads进行编号；
 			for(i = tmpFrom;i < tmpTo;i ++)
 			{
 				tmp = *(Index[Id2] + i) & 0x7fffffff;
@@ -2929,6 +3034,7 @@ int DupSort(unsigned int From, unsigned int To, unsigned int SortFlag)
 	return 1;
 }
 
+// 对左右单侧处理后的顺序进行合并排序。
 int DupFlagSort()
 {
 	unsigned int i,j,To,From,tmp,tmpId;
@@ -3802,8 +3908,8 @@ int UmiCheckCompare(unsigned int IdA, unsigned int IdB)
 unsigned char UmiCheck(unsigned int From, unsigned int To)
 {
 	unsigned char RFlag;
-	unsigned char tmpArray[20];
-	unsigned int i,tmpId,NumA,NumB;
+	unsigned char tmpArray[20],ABReadsInfo[50000],BAReadsInfo[50000];
+	unsigned int i,tmpId,NumA,NumB,tmpNum;
 	
 	RFlag = 1;
 	
@@ -3816,10 +3922,60 @@ unsigned char UmiCheck(unsigned int From, unsigned int To)
 			if(UmiCheckCompare(*(Index[Id2] + i),*(Index[Id2] + From)))
 			{
 				NumA ++;
+				// 看是否需要保存相关readsID信息；
+				if(GroupInfoFlag)
+				{
+					if(NumA == 1)
+					{
+						StringCopyWithNum(ABReadsInfo,*(ReadLane + *(Index[Id2] + i)));
+						StringAdd(ABReadsInfo,":");
+						StringAddWithNum(ABReadsInfo,*(ReadTile + *(Index[Id2] + i)));
+						StringAdd(ABReadsInfo,":");
+						StringAddWithNum(ABReadsInfo,*(ReadX + *(Index[Id2] + i)));
+						StringAdd(ABReadsInfo,":");
+						StringAddWithNum(ABReadsInfo,*(ReadY + *(Index[Id2] + i)));
+					}
+					else if(NumA <= 500)
+					{
+						StringAdd(ABReadsInfo,",");
+						StringAddWithNum(ABReadsInfo,*(ReadLane + *(Index[Id2] + i)));
+						StringAdd(ABReadsInfo,":");
+						StringAddWithNum(ABReadsInfo,*(ReadTile + *(Index[Id2] + i)));
+						StringAdd(ABReadsInfo,":");
+						StringAddWithNum(ABReadsInfo,*(ReadX + *(Index[Id2] + i)));
+						StringAdd(ABReadsInfo,":");
+						StringAddWithNum(ABReadsInfo,*(ReadY + *(Index[Id2] + i)));
+					}
+				}
 			}
 			else
 			{
 				NumB ++;
+				// 看是否需要保存相关readsID信息；
+				if(GroupInfoFlag)
+				{
+					if(NumB == 1)
+					{
+						StringCopyWithNum(BAReadsInfo,*(ReadLane + *(Index[Id2] + i)));
+						StringAdd(BAReadsInfo,":");
+						StringAddWithNum(BAReadsInfo,*(ReadTile + *(Index[Id2] + i)));
+						StringAdd(BAReadsInfo,":");
+						StringAddWithNum(BAReadsInfo,*(ReadX + *(Index[Id2] + i)));
+						StringAdd(BAReadsInfo,":");
+						StringAddWithNum(BAReadsInfo,*(ReadY + *(Index[Id2] + i)));
+					}
+					else if(NumB <= 500)
+					{
+						StringAdd(BAReadsInfo,",");
+						StringAddWithNum(BAReadsInfo,*(ReadLane + *(Index[Id2] + i)));
+						StringAdd(BAReadsInfo,":");
+						StringAddWithNum(BAReadsInfo,*(ReadTile + *(Index[Id2] + i)));
+						StringAdd(BAReadsInfo,":");
+						StringAddWithNum(BAReadsInfo,*(ReadX + *(Index[Id2] + i)));
+						StringAdd(BAReadsInfo,":");
+						StringAddWithNum(BAReadsInfo,*(ReadY + *(Index[Id2] + i)));
+					}
+				}
 			}
 		}
 	}
@@ -3852,6 +4008,34 @@ unsigned char UmiCheck(unsigned int From, unsigned int To)
 			DcsBuff[DcsBuffId] = tmpArray[tmpId];
 			DcsBuffId ++;
 			tmpId ++;
+		}
+		// 输出相关reads信息
+		if(GroupInfoFlag)
+		{
+			if(NumA > 0)
+			{
+				DcsBuff[DcsBuffId] = '\t';
+				DcsBuffId ++;
+				tmpId = 0;
+				while(ABReadsInfo[tmpId])
+				{
+					DcsBuff[DcsBuffId] = ABReadsInfo[tmpId];
+					DcsBuffId ++;
+					tmpId ++;
+				}
+			}
+			if(NumB > 0)
+			{
+				DcsBuff[DcsBuffId] = '\t';
+				DcsBuffId ++;
+				tmpId = 0;
+				while(BAReadsInfo[tmpId])
+				{
+					DcsBuff[DcsBuffId] = BAReadsInfo[tmpId];
+					DcsBuffId ++;
+					tmpId ++;
+				}
+			}
 		}
 		DcsBuff[DcsBuffId] = '\n';
 		DcsBuffId ++;
@@ -4329,16 +4513,14 @@ int DupMark()
 	}
 	DupSort(0,MaxReadNum - 1,1);
 	
-	// Sort by DupFlag;
+	// 对所有的相关reads按照Dup分组的标记顺序进行排序;
 	DupFlagSort();
 	
 	TimeLog("Final recording ..");
 	// 有UMI时，需要经过合并的过程;
 	if(UmiFlag)
 	{
-		TimeLog("Checking A");
 		ReviseAndCombine(FilterFlag,CombineFlag);
-		TimeLog("Checking B");
 		
 		if(CombineFlag)
 		{
@@ -4543,7 +4725,6 @@ int main(int argc, char *argv[])
 	// dup marking;
 	TimeLog("Dup marking");
 	DupMark();
-	
 	
 	// rm 1st sam and transfer sorted sam to bam;
 	TimeLog("Final bam transfering");
