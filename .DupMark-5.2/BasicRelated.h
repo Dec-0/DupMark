@@ -65,5 +65,6 @@ unsigned char Bit2Base(unsigned char Bit);
 
 // 染色体号转换成编号 =============
 unsigned char Chr2Char(unsigned char *String,unsigned char ReversFlag);
+unsigned char BuffLineHighLight(unsigned char *Buff,unsigned int From,unsigned int To);
 
 #endif

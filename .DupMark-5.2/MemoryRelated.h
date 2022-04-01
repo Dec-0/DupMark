@@ -38,4 +38,10 @@ unsigned int MemoryRequireOfMapGroupFull(unsigned int ArraySize,unsigned int *Ge
 // 用于记录行偏移；
 unsigned int MemoryRequireOfInfo4Shift(unsigned int ArraySize,unsigned long *GeneralPS4Long[]);
 
+// 用于记录UMI序列信息；
+unsigned int MemoryRequireOfInfo4UMISeq(unsigned int ArraySize,unsigned long *GeneralPS4Long[]);
+
+// 用于记录质量信息；
+unsigned int MemoryRequireOfInfo4BQ(unsigned int ArraySize,unsigned int *GeneralPS4Int[]);
+
 #endif

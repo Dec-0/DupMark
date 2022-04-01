@@ -18,8 +18,8 @@ unsigned char **GeneralPS4Char,*Info4MapFullLeftChr,*Info4MapFullRightChr,*Info4
 unsigned short **GeneralPS4Short,*Info4MapFullCigar;
 unsigned int MapReadsNum,MapReadsPairNum,MaxArraySize,MaxPairArraySize,MinReads,ReadLen,UmiSize,HUmiSize;
 unsigned int UmiFlag,DStrandFlag,CombineFlag,FilterFlag,FakeFlag,DebugFlag,IDFormatFlag,BamGenJumpFlag,DebugFlag;
-unsigned int **GeneralPS4Int,**Index4Int,*SortInfo4ReadsID,*GroupInfo4ReadsID,*Info4MapFullLeftPos,*Info4MapFullRightPos,*Info4MapLeftPos,*Info4MapRightPos,*GroupInfo4Map,*SortInfo4MapFull,*GroupInfo4MapFull;
-unsigned long **GeneralPS4Long,*Info4IDFull,*Info4Shift;
+unsigned int **GeneralPS4Int,**Index4Int,*SortInfo4ReadsID,*GroupInfo4ReadsID,*Info4MapFullLeftPos,*Info4MapFullRightPos,*Info4MapLeftPos,*Info4MapRightPos,*GroupInfo4Map,*SortInfo4MapFull,*GroupInfo4MapFull,*Info4BQ;
+unsigned long **GeneralPS4Long,*Info4IDFull,*Info4Shift,*Info4UMISeq;
 
 
 // ———————————————
@@ -41,13 +41,14 @@ unsigned int OptGet(int argc, char *argv[])
 	unsigned char Debug[5] = "b";
 	unsigned char OptHash[20],BaseName[1000];
 	unsigned char Info[5000] = "\n\n\
- DupMark-5.1    For Duplicates Marking and Consensus Making.\n\
+ DupMark-5.2   For Duplicates Marking and Consensus Making.\n\
  用于bam去重及UMI条件下的reads合并（SSCS、DCS ConsensusMaking）\n\n\
  和v4.0相比，新增参数“-g”，用于输出reads'ID的详细分组信息\n\
  同时修改了一个bug，非Illumina的reads格式保存中本应存入tY的存入了tX（虽然对BGI格式没有影响，因为只有23位，没有超过24位）\n\n\
  和v4.2版本相比，精细了内存占用规则，减少了总的内存占用量，代码几乎重写。但是该版本只是显示了标记重复，还没有涉及到序列合并，等后续有时间了再完成。\n\
- 另外，新增了对UMI碱基中N的简并处理（在此前版本中N和ATCG是不同的）\n\n\
- Last revised date: 2021.9.26\n\
+ 另外，新增了对UMI碱基中N的简并处理（在此前版本中N和ATCG是不同的）\n\
+ 和v5.1版本相比，提高了在不生成bam的条件下的处理速度\n\n\
+ Last revised date: 2021.10.12\n\
  Contact:zhangdong_xie@foxmail.com\n\n\
  -i/-infile   ( Required ) Bam file prepare to be dup marked.\n\n\
  -o/-outfile  ( Optional ) Dup-marked bam file.\n\
@@ -468,6 +469,7 @@ unsigned int OptGet(int argc, char *argv[])
 				}
 				
 				OptHash[10] = 1;
+				FakeFlag = 1;
 				// 假如需要在不依赖UMI的条件下进行序列合并;
 				UmiFlag = 4;
 				DStrandFlag = 1;
@@ -796,6 +798,40 @@ unsigned int MemoryRequireInitialOfInfo4Shift()
 	
 	return 1;
 }
+unsigned int MemoryRequireInitialOfInfo4UMISeq()
+{
+	unsigned int ArraySize = 1;
+	
+	if((GeneralPS4Long = (unsigned long **)malloc(ArraySize * sizeof(unsigned long *))) == NULL)
+	{
+		printf("[ Error ] Malloc memory unsuccessfully ( GeneralPS4Long %u).\n",ArraySize);
+		exit(1);
+	}
+	
+	MemoryRequireOfInfo4UMISeq(MaxPairArraySize,GeneralPS4Long);
+	Info4UMISeq = *(GeneralPS4Long + 0);
+	
+	free(GeneralPS4Long);
+	
+	return 1;
+}
+unsigned int MemoryRequireInitialOfInfo4BQ()
+{
+	unsigned int ArraySize = 1;
+	
+	if((GeneralPS4Int = (unsigned int **)malloc(ArraySize * sizeof(unsigned int *))) == NULL)
+	{
+		printf("[ Error ] Malloc memory unsuccessfully ( GeneralPS4Long %u).\n",ArraySize);
+		exit(1);
+	}
+	
+	MemoryRequireOfInfo4BQ(MaxPairArraySize,GeneralPS4Int);
+	Info4BQ = *(GeneralPS4Int + 0);
+	
+	free(GeneralPS4Int);
+	
+	return 1;
+}
 
 
 // ———————————
@@ -1013,23 +1049,47 @@ unsigned int MapInfoGroup()
 // 4. 读入文件偏移量，进行去重操作;
 unsigned int DupGroup()
 {
-	if(UmiFlag || !BamGenJumpFlag)
-	{
-		// 申请存储比对信息的内存空间（2G*8Bytes），总内存为42GBytes；
-		MemoryRequireInitialOfInfo4Shift();
-		// 获取具体的比对信息（假如非UMI条件且不需要生成或者修改Bam，则不需要获取偏移量信息）；
-		InfoGet4Shift(SamPath,Info4Shift);
-		TimeLog(start,"Info acquiring of Pointshift done");
-	}
-	
 	if(UmiFlag)
 	{
-		DupMarkWithUMI(start,SamPath,OutSamPath,MapReadsNum,Info4Shift,GroupInfo4ReadsID,SortInfo4MapFull,GroupInfo4MapFull,Info4Index,BamGenJumpFlag,DupLogPath,UmiName,HUmiSize,FakeFlag);
+		// 真UMI模式 或 假UMI模式（无UMI但需要Making Consensus）；
+		if(BamGenJumpFlag)
+		{
+			// 不需要生成Bam文件时，只需要读入UMI信息；
+			// 申请存储比对信息的内存空间（G*8Bytes），总内存为34GBytes；
+			TimeLog(start,"Begin info acquiring of UMI");
+			MemoryRequireInitialOfInfo4UMISeq();
+			// 假如有假UMI标记，则不用真实读取。
+			UMISeqAllGetFromSam(SamPath,GroupInfo4ReadsID,Info4Index,UmiName,HUmiSize,Info4UMISeq,MapReadsPairNum,FakeFlag);
+			TimeLog(start,"Info acquiring of UMI done");
+			// 不需要生成bam时根本不需要BQ信息；
+			//MemoryRequireInitialOfInfo4BQ();
+			//BQAllGetFromSam(SamPath,GroupInfo4ReadsID,Info4Index,Info4BQ,MapReadsPairNum);
+			
+			DupCountWithUMI(start,MapReadsNum,GroupInfo4ReadsID,SortInfo4MapFull,GroupInfo4MapFull,Info4Index,Info4UMISeq,DupLogPath,HUmiSize,FakeFlag);
+		}
+		else
+		{
+			// 需要生成Bam文件时，老实读入偏移量逐个处理。
+			// 申请存储比对信息的内存空间（2G*8Bytes），总内存为42GBytes；
+			MemoryRequireInitialOfInfo4Shift();
+			// 获取具体的比对信息（假如非UMI条件且不需要生成或者修改Bam，则不需要获取偏移量信息）；
+			InfoGet4Shift(SamPath,Info4Shift);
+			TimeLog(start,"Info acquiring of Pointshift done");
+			
+			// 需要同时配合处理bam，Making Consensus；
+			DupMarkWithUMI(start,SamPath,MapReadsNum,Info4Shift,GroupInfo4ReadsID,SortInfo4MapFull,GroupInfo4MapFull,Info4Index,DupLogPath,UmiName,HUmiSize,FakeFlag);
+		}
 	}
 	else
 	{
+		// 无UMI条件下，只需要读入BQ信息参与去重即可；
+		TimeLog(start,"Begin info acquiring of BQ");
+		MemoryRequireInitialOfInfo4BQ();
+		BQAllGetFromSam(SamPath,GroupInfo4ReadsID,Info4Index,Info4BQ,MapReadsPairNum);
+		TimeLog(start,"Info acquiring of BQ done");
+		
 		// 确定需要标记的编号；
-		DupMarkWithOutUMI(start,SamPath,OutSamPath,MapReadsNum,Info4Shift,GroupInfo4ReadsID,SortInfo4MapFull,GroupInfo4MapFull,Info4Index,BamGenJumpFlag,DupLogPath);
+		DupMarkWithOutUMI(start,MapReadsNum,GroupInfo4ReadsID,SortInfo4MapFull,GroupInfo4MapFull,Info4Index,Info4BQ,BamGenJumpFlag,DupLogPath);
 		TimeLog(start,"Info acquiring of Duplication done");
 		
 		if(!BamGenJumpFlag)

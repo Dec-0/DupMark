@@ -22,7 +22,7 @@ unsigned int SortAndGroup4MapInfo(time_t start,unsigned char *Chr,unsigned int *
 // 给定一个完整的全序列参考，在限定范围内再排序；
 unsigned int ReSortByString(unsigned int From,unsigned int To,unsigned int *SortInfo,unsigned int *GroupInfo);
 // 给定的是一个限定范围的参考值
-unsigned int UMISeqCompare(unsigned long UMIA,unsigned long UMIB);
-unsigned int ReSortByUMI(unsigned int PairNum,unsigned int *PairFrom,unsigned int *PairTo,unsigned int *Read1,unsigned int *Read2,unsigned long *UMISeq,unsigned char *FRFlag);
+unsigned int UMISeqCompare(unsigned long UMIA,unsigned long UMIB,unsigned int HUmiSize);
+unsigned int ReSortByUMI(unsigned int PairNum,unsigned int *PairFrom,unsigned int *PairTo,unsigned int *Read1,unsigned int *Read2,unsigned long *UMISeq,unsigned int HUmiSize,unsigned char *FRFlag);
 
 #endif

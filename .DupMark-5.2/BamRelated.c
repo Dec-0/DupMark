@@ -1300,21 +1300,187 @@ unsigned long UMISeqGetFromSam(FILE *fid,unsigned int *SortInfo4MapFull,unsigned
 		exit(1);
 	}
 	
-/*
-	// 两部分UMI按同一个规则对大小排序，即便是单侧UMI也会有2个成员。
-	if(HalfSeq[0] > HalfSeq[1])
-	{
-		UMISeq = HalfSeq[1];
-		// 默认左侧UMI序列大时为F1R2，右侧UMI序列大时为F2R1。当然这里不一定是FR，也可能是FF，RR，只是标记了区别。
-		UMISeq = UMISeq << 30 | HalfSeq[0] | 0x8000000000000000;
-	}
-	else
-	{
-		UMISeq = HalfSeq[0];
-		UMISeq = UMISeq << 30 | HalfSeq[1];
-	}
-*/
 	UMISeq = HalfSeq[0] << 30 | HalfSeq[1];
 	
 	return UMISeq;
+}
+// 获得所有Reads对对应的UMI序列信息；
+unsigned int UMISeqAllGetFromSam(unsigned char *File,unsigned int *GroupInfo4ReadsID,unsigned char *Info4Index,unsigned char *ColPrefixOfUMI,unsigned int HUmiSize,unsigned long *UMISeq,unsigned int MapReadsPairNum,unsigned int FakeFlag)
+{
+	FILE *fid;
+	unsigned char BuffContent[1000000],SplitCol[50][500];
+	unsigned int MaxBuffSize = 1000000;
+	unsigned int BuffSize = 0;
+	unsigned int LineStart = 0;
+	unsigned int LineEnd = 0;
+	unsigned int AccumReadNum = 0;
+	unsigned int i,tId,MatchFlag,ColNum,SeqId,ShiftNum,ShiftBit;
+	unsigned long HalfSeq[2];
+	
+	if(FakeFlag)
+	{
+		AccumReadNum = MapReadsPairNum;
+		// 单端UMI
+		HalfSeq[0] = 0x0f;
+		if(HUmiSize)
+		{
+			// 双端UMI
+			HalfSeq[0] = 0x0f;
+			HalfSeq[0] = HalfSeq[0] << 30 | 0x0f;
+		}
+		memset(UMISeq,HalfSeq[0],AccumReadNum * sizeof(unsigned long));
+		return AccumReadNum;
+	}
+	
+	fid = fopen(File,"r");
+	if(fid == NULL)
+	{
+		printf("File cannot be open: %s\n",File);
+		exit(1);
+	}
+	
+	while(MultiLineCap(fid,BuffContent,MaxBuffSize,&BuffSize,&LineStart,&LineEnd))
+	{
+		if(BuffContent[LineStart] != '@')
+		{
+			// UMI只检查Raed1就好；
+			if(! (*(Info4Index + AccumReadNum) & 0x01))
+			{
+				AccumReadNum ++;
+				continue;
+			}
+			
+			ColNum = ColSplit(BuffContent,LineStart,LineEnd,SplitCol);
+			MatchFlag = 0;
+			for(i = 11;i < ColNum;i ++)
+			{
+				if(tId = IfStringBegin(SplitCol[i],ColPrefixOfUMI))
+				{
+					tId ++;
+					SeqId = 0;
+					// 位移的次数
+					ShiftNum = 0;
+					// 位移的位数
+					ShiftBit = 0;
+					HalfSeq[0] = 0;
+					HalfSeq[1] = 0;
+					while(SplitCol[i][tId])
+					{
+						// 最多位移27位
+						if(ShiftBit >= 30)
+						{
+							BuffLineHighLight(BuffContent,LineStart,LineEnd);
+							printf("[ Error ] Only suppport 10 bases on half umi at most (%s).\n",BuffContent);
+							exit(1);
+						}
+						
+						// 假如是双端，则需要存储入不同的部分；
+						if(HUmiSize > 0 && ShiftNum == HUmiSize)
+						{
+							SeqId ++;
+							if(SeqId > 1)
+							{
+								BuffLineHighLight(BuffContent,LineStart,LineEnd);
+								printf("[ Error ] More than 2 UMI sequences per one read pair (%s).\n",BuffContent);
+								exit(1);
+							}
+							ShiftNum = 0;
+							ShiftBit = 0;
+						}
+						
+						if(SplitCol[i][tId] == 'A')
+						{
+							HalfSeq[SeqId] |= 0x01 << ShiftBit;
+						}
+						else if(SplitCol[i][tId] == 'T')
+						{
+							HalfSeq[SeqId] |= 0x02 << ShiftBit;
+						}
+						else if(SplitCol[i][tId] == 'C')
+						{
+							HalfSeq[SeqId] |= 0x03 << ShiftBit;
+						}
+						else if(SplitCol[i][tId] == 'G')
+						{
+							HalfSeq[SeqId] |= 0x04 << ShiftBit;
+						}
+						else if(SplitCol[i][tId] == 'N')
+						{
+							HalfSeq[SeqId] |= 0x00 << ShiftBit;
+						}
+						// 非ATCGN直接跳过;
+						else
+						{
+							tId ++;
+							continue;
+						}
+						
+						tId ++;
+						ShiftNum += 1;
+						ShiftBit = ShiftNum * 3;
+					}
+					
+					MatchFlag = 1;
+					break;
+				}
+			}
+			if(!MatchFlag)
+			{
+				BuffLineHighLight(BuffContent,LineStart,LineEnd);
+				printf("[ Error ] Can not locate UMI (With prefix %s) in bam line %s\n",ColPrefixOfUMI,BuffContent);
+				exit(1);
+			}
+			
+			*(UMISeq + *(GroupInfo4ReadsID + AccumReadNum)) = HalfSeq[0] << 30 | HalfSeq[1];
+			AccumReadNum ++;
+		}
+	}
+	
+	return AccumReadNum;
+}
+
+// 获得所有Reads对对应的质量值之和；
+unsigned int BQAllGetFromSam(unsigned char *File,unsigned int *GroupInfo4ReadsID,unsigned char *Info4Index,unsigned int *Info4BQ,unsigned int MapReadsPairNum)
+{
+	FILE *fid;
+	unsigned char BuffContent[1000000],SplitCol[50][500];
+	unsigned int MaxBuffSize = 1000000;
+	unsigned int BuffSize = 0;
+	unsigned int LineStart = 0;
+	unsigned int LineEnd = 0;
+	unsigned int AccumReadNum = 0;
+	unsigned int tId,ColNum;
+	
+	fid = fopen(File,"r");
+	if(fid == NULL)
+	{
+		printf("File cannot be open: %s\n",File);
+		exit(1);
+	}
+	
+	memset(Info4BQ,0,MapReadsPairNum * sizeof(unsigned int));
+	while(MultiLineCap(fid,BuffContent,MaxBuffSize,&BuffSize,&LineStart,&LineEnd))
+	{
+		if(BuffContent[LineStart] != '@')
+		{
+			// 需要统计Read1和Read2之和；
+			if(! (*(Info4Index + AccumReadNum) & 0x0f))
+			{
+				AccumReadNum ++;
+				continue;
+			}
+			
+			ColNum = ColSplit(BuffContent,LineStart,LineEnd,SplitCol);
+			// BQ在第11列；
+			tId = 0;
+			while(SplitCol[10][tId])
+			{
+				*(Info4BQ + *(GroupInfo4ReadsID + AccumReadNum)) += SplitCol[10][tId] - 30;
+				tId ++;
+			}
+			AccumReadNum ++;
+		}
+	}
+	
+	return AccumReadNum;
 }

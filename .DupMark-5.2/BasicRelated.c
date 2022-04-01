@@ -715,3 +715,19 @@ unsigned char Chr2Char(unsigned char *String,unsigned char ReversFlag)
 	
 	return Char;
 }
+
+// 用于前移缓存中指定区间内的数据
+unsigned char BuffLineHighLight(unsigned char *Buff,unsigned int From,unsigned int To)
+{
+	unsigned int Len,i;
+	
+	Len = 0;
+	for(i = From;i <= To;i ++)
+	{
+		Buff[Len] = Buff[i];
+		Len ++;
+	}
+	Buff[Len] = '\0';
+	
+	return Len;
+}

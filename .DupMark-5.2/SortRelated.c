@@ -648,13 +648,23 @@ unsigned int ReSortByString(unsigned int From,unsigned int To,unsigned int *Sort
 	return Num;
 }
 
-// UMI序列对比
-unsigned int UMISeqCompare(unsigned long UMIA,unsigned long UMIB)
+// UMI序列对比（需要区分单侧和双侧的区别）；
+unsigned int UMISeqCompare(unsigned long UMIA,unsigned long UMIB,unsigned int HUmiSize)
 {
 	unsigned int i,Shift,tA,tB;
 	unsigned int MatchFlag = 1;
 	unsigned long UMIHalfB[2];
 	unsigned long UMIBr;
+	
+	// 假如是单端UMI；
+	if(! HUmiSize)
+	{
+		if(UMIA != UMIB)
+		{
+			MatchFlag = 0;
+		}
+		return MatchFlag;
+	}
 	
 	UMIHalfB[0] = UMIB & 0x3fffffff;
 	UMIHalfB[1] = UMIB >> 30 & 0x3fffffff;
@@ -833,13 +843,14 @@ unsigned int ReSortByUMI(unsigned int PairNum,unsigned int *PairFrom,unsigned in
 	return Num;
 }
 */
-unsigned int ReSortByUMI(unsigned int PairNum,unsigned int *PairFrom,unsigned int *PairTo,unsigned int *Read1,unsigned int *Read2,unsigned long *UMISeq,unsigned char *FRFlag)
+unsigned int ReSortByUMI(unsigned int PairNum,unsigned int *PairFrom,unsigned int *PairTo,unsigned int *Read1,unsigned int *Read2,unsigned long *UMISeq,unsigned int HUmiSize,unsigned char *FRFlag)
 {
 	unsigned char BlankFlag[100000],tFRFlag[100000];
 	unsigned int tPairFrom[100000],tPairTo[100000],tRead1[100000],tRead2[100000];
 	unsigned int i,j,tId,MatchFlag;
 	unsigned long tUMISeq[100000];
 	
+	// 标记是否被处理过；
 	memset(BlankFlag,1,PairNum * sizeof(unsigned char));
 	tId = 0;
 	for(i = 0;i < PairNum;i ++)
@@ -862,7 +873,7 @@ unsigned int ReSortByUMI(unsigned int PairNum,unsigned int *PairFrom,unsigned in
 		{
 			if(BlankFlag[j])
 			{
-				MatchFlag = UMISeqCompare(*(UMISeq + i),*(UMISeq + j));
+				MatchFlag = UMISeqCompare(*(UMISeq + i),*(UMISeq + j),HUmiSize);
 				if(MatchFlag > 0)
 				{
 					tPairFrom[tId] = *(PairFrom + j);

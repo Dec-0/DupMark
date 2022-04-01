@@ -56,4 +56,9 @@ unsigned int LineShow(FILE *fid,unsigned int *SortInfo4MapFull,unsigned long *In
 // 获得UMI序列信息；
 unsigned long UMISeqGetFromSam(FILE *fid,unsigned int *SortInfo4MapFull,unsigned long *Info4Shift,unsigned int Id4Read,unsigned char *ColPrefixOfUMI,unsigned int HUmiSize);
 
+// 获得所有Reads对对应的UMI序列信息；
+unsigned int UMISeqAllGetFromSam(unsigned char *File,unsigned int *GroupInfo4ReadsID,unsigned char *Info4Index,unsigned char *ColPrefixOfUMI,unsigned int HUmiSize,unsigned long *UMISeq,unsigned int MapReadsPairNum,unsigned int FakeFlag);
+// 获得所有Reads对对应的质量值之和；
+unsigned int BQAllGetFromSam(unsigned char *File,unsigned int *GroupInfo4ReadsID,unsigned char *Info4Index,unsigned int *Info4BQ,unsigned int MapReadsPairNum);
+
 #endif

@@ -213,3 +213,27 @@ unsigned int MemoryRequireOfInfo4Shift(unsigned int ArraySize,unsigned long *Gen
 	
 	return 1;
 }
+
+// 用于记录UMI序列信息；
+unsigned int MemoryRequireOfInfo4UMISeq(unsigned int ArraySize,unsigned long *GeneralPS4Long[])
+{
+	if((*(GeneralPS4Long + 0) = (unsigned long *)malloc(ArraySize * sizeof(unsigned long))) == NULL)
+	{
+		printf("[ Error ] Malloc memory unsuccessfully ( Info4UMISeq %u).\n",ArraySize);
+		exit(1);
+	}
+	
+	return 1;
+}
+
+// 用于记录质量信息；
+unsigned int MemoryRequireOfInfo4BQ(unsigned int ArraySize,unsigned int *GeneralPS4Int[])
+{
+	if((*(GeneralPS4Int + 0) = (unsigned int *)malloc(ArraySize * sizeof(unsigned int))) == NULL)
+	{
+		printf("[ Error ] Malloc memory unsuccessfully ( Info4BQ %u).\n",ArraySize);
+		exit(1);
+	}
+	
+	return 1;
+}
